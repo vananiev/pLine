@@ -44,6 +44,8 @@ __published:	// IDE-managed Components
 	TMenuItem *mnuToFile;
 	TComboBox *cmbPhase;
 	TMenuItem *mnuFileSaveStep;
+   TMenuItem *mnuSaveInstant;
+   TMenuItem *mnuSavePhasor;
    void __fastcall TimerTimer(TObject *Sender);
    void __fastcall btnStartClick(TObject *Sender);
    void __fastcall btnPauseClick(TObject *Sender);
@@ -72,10 +74,13 @@ __published:	// IDE-managed Components
 	void __fastcall mnuToFileClick(TObject *Sender);
    void __fastcall cmbPhaseChange(TObject *Sender);
 	void __fastcall mnuFileSaveStepClick(TObject *Sender);
+   void __fastcall mnuSaveInstantClick(TObject *Sender);
+   void __fastcall mnuSavePhasorClick(TObject *Sender);
 private:	// User declarations
    vector<PBase*> *Nodes;   	// список всех объектов на форме
    PLinkComponent *Links;     // связи между выводами
    Float get_signal();        // получить значение измеряемого параметра
+   Complex get_complex_signal();// получить измерение в векторном формате
    int Phase;						// с какой фазы получаем сигнал
    ofstream fout;             // файл, в который сохраняем значения
    String File;					// имя файла в который пишем

@@ -21,6 +21,7 @@ __published:	// IDE-managed Components
 	void __fastcall FormShow(TObject *Sender);
 private:	// User declarations
 	int printMatrix(Matrix<Complex>* A, char* Name, int x=0, int y=0);
+   int printParametr(Matrix<Complex>* A, char* Name, int x=0, int y=0);
 public:		// User declarations
 	__fastcall TfrmLine_parameters(TComponent* Owner);
    link *Line;

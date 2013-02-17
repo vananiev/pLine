@@ -42,6 +42,8 @@ __published:	// IDE-managed Components
 	TMenuItem *mnuModeling;
 	TMenuItem *mnuStartStop;
 	TMenuItem *mnuClear;
+   TMenuItem *mnuSaveAs;
+   TMenuItem *mnuLine;
    void __fastcall FormPaint(TObject *Sender);
    void __fastcall FormDragDrop(TObject *Sender, TObject *Source, int X, int Y);
    void __fastcall FormDragOver(TObject *Sender, TObject *Source, int X, int Y, TDragState State, bool &Accept);
@@ -62,6 +64,9 @@ __published:	// IDE-managed Components
    void __fastcall mnuSmpClick(TObject *Sender);
 	void __fastcall mnuStartStopClick(TObject *Sender);
 	void __fastcall mnuClearClick(TObject *Sender);
+   void __fastcall mnuSaveAsClick(TObject *Sender);
+   void __fastcall mnuLineClick(TObject *Sender);
+   void __fastcall FormResize(TObject *Sender);
 private:	// User declarations
    grid *Grid;								   // это сеть, которая будет собираться
    void __fastcall PinMouseDown(TObject* Sender, TMouseButton Button, Classes::TShiftState Shift, int X, int Y);
@@ -75,7 +80,16 @@ private:	// User declarations
 	void __fastcall LinkDelete(PLinkComponent *Sender);   // вызывается при удалении связи
    void __fastcall LinkAdd(PLinkComponent *Sender);		// вызывается при изменении связей
    void CloseScope();
-   void OpenFile(String name);
+   bool OpenFile(String name);
+   String FileName;
+   bool NeedBuild;      // требуется пересобрать схему
+   bool LineTesting;    // режим тестирования линии
+   String LineTestOutputPath;
+   ofstream LineTestFile[15];
+   Complex get_complex_current(link* Link, node* Node, int phase);
+   Complex get_complex_voltage(node* Node, int phase);
+   Float get_temperature(link* Link, int phase);
+   void __fastcall writeToFile();
 public:		// User declarations
    __fastcall TfrmMain(TComponent* Owner);
    vector<PBase*>       Objects;			// список всех объектов на форме

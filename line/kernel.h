@@ -4,6 +4,7 @@
 #include <string>
 #include <math.h>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <system.hpp>   // String
@@ -15,7 +16,7 @@
 
 #define freq 50						//частота основной гармоники
 
-//using namespace std;
+using namespace std;
 
 typedef long double Float;
 

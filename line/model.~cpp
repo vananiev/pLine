@@ -386,7 +386,9 @@ link::link(node* From, node* To):
 	_From(From),
    _To(To),
    num_wire(3),
-   gt_phase_wire_num(1)
+   gt_phase_wire_num(1),
+   Z0_as(num_wire,0),
+   Z0_ss(0,0)
 {
    /*for(int i_freq=0; i_freq<num_f; i_freq++){
      I1.push_back( NULL );
@@ -394,37 +396,36 @@ link::link(node* From, node* To):
      } */
    Length = 100;
    R0t[0] = R0t[1] = R0t[2] = R0 = 0.422;
-   gz0 = 1e-6;
+   gz0 = 1e-8;
    gm0 = 0;
    P_sun = v = 0;
    q = M_PI/2;
-   q_sun = M_PI/2;
+   //q_sun = M_PI/2;
    T_wire[0] = T_wire[1] = T_wire[2] = T_env = 20;
    e_blackness = 0.5; // [0.11-0.8]
    e_intake = 0.6;
-   k_F = 6;
+   m_Al = 188;
    D = 11.4e-3;
    m = 276;
-   D_gt = 11e-3;
-   R0_gt = 1.74;
-   pe = 100;
-   spanLength = 100;
-   Sag = 4;
-   Sag_gt = 4;
+   D_gt = 9.2e-3;
+   R0_gt = 2.28;
+   pe = 1000;
+   spanLength = 200;
+   Sag = 7.2;
+   Sag_gt = 7.2;
    phase_wire_num = 1;
    phase_radius = 0.15;
    SF = 0.73;
    SF_gt = 0.7;
    u_gt = 1000;
-   num_gt_wire = 1;
-   is_Transpositioned = true;
+   num_gt_wire = 0;
+   is_Transpositioned = false;
    d.resize(num_wire);
-   d[0] = Complex(1.75, 17.5);
-   d[1] = Complex(3.3, 14.5);
-   d[2] = Complex(-1.75, 14.5);
+   d[0] = Complex(2.0, 18.5);
+   d[1] = Complex(3.5, 14.5);
+   d[2] = Complex(-2.0, 14.5);
    d_gt.resize(num_gt_wire);
-   if(num_gt_wire>0) d_gt[0] = Complex(0, 18.6);
-   K_wire_Length = 1 + Sag*Sag*8/3/spanLength;
+   if(num_gt_wire>0) d_gt[0] = Complex(0, 20.5);
 
    Name = "Линия";
    Describe_Fields();
@@ -446,7 +447,7 @@ void link::Describe_Fields(){
    fi.ptr = (void*) &Length;
    Fields.push_back(fi);
 
-   fi.Name = "R0";
+   fi.Name = "R0 провода";
    fi.Type = "Float";
    fi.ptr = (void*) &R0;
    Fields.push_back(fi);
@@ -498,11 +499,6 @@ void link::Describe_Fields(){
    fi.ptr = (void*) &phase_radius;
    Fields.push_back(fi);
 
-   fi.Name = "F_Al/F_ст";
-   fi.Type = "Float";
-   fi.ptr = (void*) &k_F;
-   Fields.push_back(fi);
-
    fi.Name = "Диам.пров, м";
    fi.Type = "Float";
    fi.ptr = (void*) &D;
@@ -533,12 +529,12 @@ void link::Describe_Fields(){
    fi.ptr = (void*) &d;
    Fields.push_back(fi);
 
-   fi.Name = "Число ГТ";
+   fi.Name = "Число ГТ(заземленных)";
    fi.Type = "int";
    fi.ptr = (void*) &num_gt_wire;
    Fields.push_back(fi);
 
-   fi.Name = "ГТ кординаты подвеса на опоре,м";
+   fi.Name = "ГТ(заземл.)кординаты подвеса на опоре,м";
    fi.Type = "vector<complex>";
    fi.ptr = (void*) &d_gt;
    Fields.push_back(fi);
@@ -551,6 +547,12 @@ void link::Describe_Fields(){
    fi.Name = "Масса.пров,кг/км";
    fi.Type = "Float";
    fi.ptr = (void*) &m;
+   Fields.push_back(fi);
+
+
+   fi.Name = "Масса алюм.части пров,кг/км";
+   fi.Type = "Float";
+   fi.ptr = (void*) &m_Al;
    Fields.push_back(fi);
 
    fi.Name = "Темп.возд";
@@ -583,11 +585,13 @@ void link::Describe_Fields(){
    fi.ptr = (void*) &P_sun;
    Fields.push_back(fi);
 
-   fi.Name = "Наклон солн,рад";
+   /*fi.Name = "Наклон солн,рад";
    fi.Type = "Float";
    fi.Mode = rwf;
    fi.ptr = (void*) &q_sun;
    Fields.push_back(fi);
+   не  играет роли т.к. провод круглый
+   */
 
    fi.Name = "Ск.ветра,м/с";
    fi.Type = "Float";
@@ -621,7 +625,6 @@ bool link::accept(){
    I2.resize(num_f);
    d.resize(num_wire);
    d_gt.resize(num_gt_wire);
-   K_wire_Length = 1 + Sag*Sag*8/3/spanLength;
    calc_k();
    return true;
 }
@@ -632,7 +635,7 @@ bool link::update(){
 
    Field(&T_env)->update();
    Field(&P_sun)->update();
-   Field(&q_sun)->update();
+   //Field(&q_sun)->update();
    Field(&v)->update();
    Field(&q)->update();
    Field(&pe)->update();
@@ -649,22 +652,11 @@ void link::calc_k(){
 	calc_Z0_Y0();
    k.clear();
    for(int i=0; i<num_f; i++){
-      /*
-      // вместо этого нужно сдвигать по фазам на заданные углы
-      // токи в зависимости от кратности частоты
-      complex<Float> a, b;
-      if( i%3 != 0 ){
-          a =  complex<Float>(R0t, 2*M_PI*i*freq*(L0-M0));
-          b =  complex<Float>(g0, 2*M_PI*i*freq*C0);}
-      else{
-          a =  complex<Float>(R0t, 2*M_PI*i*freq*(L0+2*M0));
-          b =  complex<Float>(gz0, 2*M_PI*i*freq*Cz0);} */
-
       Matrix<Complex> y = sqrt( (*Z0[i]) * (*Y0[i]) ) ;
-      Matrix<Complex> Zv = (*Z0[i]) * y.inverse() ;
+      Matrix<Complex> Zv = sqrt((*Z0[i]) * (*Y0[i]).inverse());//(*Z0[i]) * y.inverse() ;
 
       vector< Matrix<Complex> > _k;
-      Matrix<Complex> yl = K_wire_Length * Length * y ;
+      Matrix<Complex> yl = Length * y ;
       Matrix<Complex> exp_sum = 0.5*(exp(yl) + exp(-yl));
       Matrix<Complex> exp_sub = 0.5*(exp(yl) - exp(-yl));
       Matrix<Complex> Zv_1 = Zv.inverse();
@@ -687,8 +679,8 @@ void link::calc_k(){
 //---------------------------------------------------------------------------
 
 void link::rise_wire_tempetarute(){
-   Float p_Al = 2689;   // плотность
-   Float p_ct = 7800;
+   //Float p_Al = 2689;   // плотность
+   //Float p_ct = 7800;
    Float c_Al = 930; // Дж/кг/K
    Float c_ct = 500;
 
@@ -718,24 +710,28 @@ void link::rise_wire_tempetarute(){
    // коэффициент лучистого теплообмена
    Float K_l = (fabs(T_wire[i]-T_env)<0.1)?5.67*e_blackness:5.67*e_blackness/(T_wire[i]-T_env) * ( pow((273+T_wire[i])/100, 4) - pow((273+T_env)/100, 4) );
 
-   // коэф. теплоотдачи
+   // коэф. теплоотдачи  на 1 провод (1 провод в расщепленной фазе)
    Float K = K_k + K_l;
 
-   Float dP_sun = e_intake * D * 1000 * sin(q_sun) * P_sun; // на 1 км
+   Float dP_sun = e_intake * D * 1000 /* * sin(q_sun)==1*/ * P_sun; // на 1 км
 
-   Float i1 = 0, i2 = 0, i_max;
-   for(int i_freq=0; i_freq < num_f; i_freq++){
-      i1 += imag(*I1[i_freq][i]);
-      i2 += imag(*I2[i_freq][i]);
+   // действующее значение несинусоидального тока (напряжения) равно квадратному корню из действующих значений отдельных гармоник:
+   Float I1_2 = norm(*I1[0][i]);
+   Float I2_2 = norm(*I2[0][i]);
+   Float Imax_2;
+   Float w_num_2 = phase_wire_num*phase_wire_num;
+   for(int i_freq=1; i_freq < num_f; i_freq++){
+      I1_2 += 0.5*norm(*I1[i_freq][i])/w_num_2;
+      I2_2 += 0.5*norm(*I2[i_freq][i])/w_num_2;
       }
-   i_max = (i1>i2)?i1:i2;
-   Float dP_elec = pow(i_max,2) * R0t[i];
+   Imax_2 = (I1_2>I2_2)?I1_2:I2_2;
+   Float dP_elec = Imax_2 * R0t[i];
 
    Float dP = dP_sun + dP_elec;   // на один км
 
    Float S_ohl = M_PI*D*1000;
 
-   Float m_Al = m/(1 + p_ct/p_Al/k_F);
+   //Float m_Al = m/(1 + p_ct/p_Al/k_F);
    Float cm = m_Al*c_Al + (m-m_Al)*c_ct;
 
    Float dT = ( dP - K*S_ohl*(T_wire[i]-T_env) ) * smp / cm;
@@ -812,12 +808,12 @@ void link::Save(ostream &out){
    out << P_sun << " ";
    out << v << " ";
    out << q << " ";
-   out << q_sun << " ";
+   //out << q_sun << " ";
 	out << T_env << " ";
    for(int i=0; i<num_wire;i++) out << T_wire[i] << " ";
    out << e_blackness << " ";
    out << e_intake << " ";
-   out << k_F << " ";
+   out << m_Al << " ";
    out << D << " ";
    out << D_gt << " ";
    out << m << " ";
@@ -849,12 +845,12 @@ void link::Read(istream &in){
    in >>  P_sun ;
    in >>  v ;
    in >>  q ;
-   in >>  q_sun ;
+   //in >>  q_sun ;
 	in >>  T_env ;
    for(int i=0; i<num_wire;i++) in >>  T_wire[i] ;
    in >>  e_blackness ;
    in >>  e_intake ;
-   in >>  k_F ;
+   in >>  m_Al ;
    in >>  D ;
    in >>  D_gt ;
    in >>  m ;
@@ -891,7 +887,8 @@ void link::calc_Z0_Y0()
    calc_Z0();
    // перерасчитаем фазные сопротивл и коэф. максвела, исключив уравнения для ГТ
    for(int i=0; i<num_f;i++){
-   	Matrix<Complex> * phase = calc_to_phase( Z0[i] );
+      bool save = (i==1)?true:false;
+   	Matrix<Complex> * phase = calc_to_phase( Z0[i], save );
       delete Z0[i]; Z0[i] = NULL;
       Z0[i] = phase;
    	}
@@ -903,7 +900,7 @@ void link::calc_Z0_Y0()
    // проводов и ГТ
    Matrix<Float>* P0 = calc_P0();
    // перерасчитаем коэф. максвела, исключив уравнения для ГТ
-   Matrix<Float> * ph = calc_to_phase( P0 );
+   Matrix<Float> * ph = calc_to_phase( P0, false ); //
    delete P0; P0 = NULL;
    // высчитываем емкости
    Matrix<Float> C0 = ph->inverse();
@@ -944,6 +941,11 @@ void link::calc_Z0(){
    Z0.resize(num_f);
    int num = num_wire + num_gt_wire;
 
+   // коэф. увеличения длинны провода по сравнению с длинной ЛЭП
+   // удельное активное сопротивление 1км провода и линии не равны из-за наличия провеса проводов (1км линии > 1км провода)
+   Float K_wire_Length = 1 + Sag*Sag*8/3/spanLength/spanLength;
+   Float K_wire_gt_Length = 1 + Sag_gt*Sag_gt*8/3/spanLength/spanLength;
+
   for(int n=0; n<num_f;n++){
    Z0[n] = new Matrix<Complex>(num,num);
    Matrix<Complex> *Z_f = Z0[n];
@@ -956,11 +958,14 @@ void link::calc_Z0(){
 	// среднегеометрический радиус фазы
    Float GMRc = SF * 0.5 * D;
    Float GMReq;
-   switch(phase_wire_num){
-      case 1:	GMReq = GMRc; break;
-      case 2:	GMReq = pow( phase_wire_num * GMRc * pow(phase_radius,phase_wire_num-1), (Float)1.0/phase_wire_num ); break;
-      default:	err(_ERROR_, "line: число проводов в расщепленной фазе должно быть больше 0"); GMReq = GMRc; break;
-   	}
+   if(phase_wire_num<=0){
+      err(_ERROR_, "line: число проводов в расщепленной фазе должно быть больше 0");
+      GMReq = GMRc;
+   }else if(phase_wire_num == 1)
+      GMReq = GMRc;
+   else
+      GMReq = pow( phase_wire_num * GMRc * pow(phase_radius,phase_wire_num-1), (Float)1.0/phase_wire_num );
+
    Float GMRc_gt = SF_gt * 0.5 * D_gt;
    Float GMReq_gt;
    switch(gt_phase_wire_num){
@@ -976,16 +981,16 @@ void link::calc_Z0(){
    	for(int j=0; j<num; j++)
       	if(i==j){
          	if(i<num_wire){ // провод фазы
-            	Im = 4*M_PI*1e-4*f* (0.25/phase_wire_num + log(Derc/GMReq) ) + f/(911.812*Derc/imag(d_sag[i])/2.0);
-            	Re = R0t[i]/phase_wire_num + pow(M_PI,2)*1e-4*f - f/(911.812*Derc/imag(d_sag[i])/2.0);
+            	Im = 4*M_PI*(1e-4)*f* (0.25/phase_wire_num + log(Derc/GMReq) ) + f/(911.812*Derc/imag(d_sag[i])/2.0);
+            	Re = (K_wire_Length*R0t[i])/phase_wire_num + pow(M_PI,2)*(1e-4)*f - f/(911.812*Derc/imag(d_sag[i])/2.0);
             }else{ // провод ГТ
-            	Im = 4*M_PI*1e-4*f* (u_gt*0.25/gt_phase_wire_num + log(Derc/GMReq_gt) ) + f/(911.812*Derc/imag(d_sag[i])/2.0);
-            	Re = R0_gt/gt_phase_wire_num + pow(M_PI,2)*1e-4*f  - f/(911.812*Derc/imag(d_sag[i])/2.0);
+            	Im = 4*M_PI*(1e-4)*f* (u_gt*0.25/gt_phase_wire_num + log(Derc/GMReq_gt) ) + f/(911.812*Derc/imag(d_sag[i])/2.0);
+            	Re = (K_wire_gt_Length*R0_gt)/gt_phase_wire_num + pow(M_PI,2)*(1e-4)*f  - f/(911.812*Derc/imag(d_sag[i])/2.0);
                }
             (*Z_f)[i][j] = Complex(Re, Im);
          }else{
-            Re = pow(M_PI,2)*1e-4*f - f/(911.812*Derc/(imag(d_sag[i])+imag(d_sag[j])) );
-            Im = 4*M_PI*1e-4*f*log(Derc/abs(d_sag[i]-d_sag[j]) ) + f/(911.812*Derc/(imag(d_sag[i])+imag(d_sag[j])));
+            Re = pow(M_PI,2)*(1e-4)*f - f/(911.812*Derc/(imag(d_sag[i])+imag(d_sag[j])) );
+            Im = 4*M_PI*(1e-4)*f*log(Derc/abs(d_sag[i]-d_sag[j]) ) + f/(911.812*Derc/(imag(d_sag[i])+imag(d_sag[j])));
             (*Z_f)[i][j] = Complex(Re, Im);
          	}
 	}
@@ -1008,8 +1013,8 @@ void link::calc_Y0(Matrix<Float>* C0)
    	// учитываем активные проводимости
  		for(int i=0; i<num_wire; i++)
    		for(int j=0; j<num_wire; j++)
-      		if(i==j)	(*Y_f)[i][j] = Complex(gz0, -2*M_PI*f*(*C0)[i][j]);
-         	else     (*Y_f)[i][j] = Complex(gm0, -2*M_PI*f*(*C0)[i][j]);
+      		if(i==j)	(*Y_f)[i][j] = Complex(gz0, 2*M_PI*f*(*C0)[i][j]);
+         	else     (*Y_f)[i][j] = Complex(gm0, 2*M_PI*f*(*C0)[i][j]);
    	}
 }
 
@@ -1023,11 +1028,14 @@ Matrix<Float>* link::calc_P0()
 	// среднегеометрический радиус фазы
    Float GMRc = 0.5 * D;       // да-да SF не учитываем!
    Float GMReq;
-   switch(phase_wire_num){
-      case 1:	GMReq = GMRc; break;
-      case 2:	GMReq = pow( phase_wire_num * GMRc * pow(phase_radius,phase_wire_num-1), (Float)1.0/phase_wire_num ); break;
-      default:	err(_ERROR_, "line: число проводов в расщепленной фазе должно быть больше 0"); GMReq = GMRc; break;
-   	}
+   if(phase_wire_num<=0){
+      err(_ERROR_, "line: число проводов в расщепленной фазе должно быть больше 0");
+      GMReq = GMRc;
+   }else if(phase_wire_num==1)
+      GMReq = GMRc;
+   else
+      GMReq = pow( phase_wire_num * GMRc * pow(phase_radius,phase_wire_num-1), (Float)1.0/phase_wire_num );
+
    Float GMRc_gt = 0.5 * D_gt;    // да-да SF_gt не учитываем!
    Float GMReq_gt;
    switch(gt_phase_wire_num){
@@ -1051,11 +1059,15 @@ Matrix<Float>* link::calc_P0()
 
 //---------------------------------------------------------------------------
 template<class T>
-Matrix<T> * link::calc_to_phase( Matrix<T> * _Z )
+Matrix<T> * link::calc_to_phase( Matrix<T> * _Z, bool save_Z_gt  )
 {
 	Matrix<T> * Zph = new Matrix<T>(num_wire, num_wire);
    // заземленных ГТ нет
    if( (int)_Z->Rows() == num_wire && (int)_Z->Cols() == num_wire ){
+      if(save_Z_gt){
+         Z0_as = Matrix<Complex>(0,0);
+         Z0_ss = Matrix<Complex>(0,0);
+         }
       *Zph = *_Z;
       return Zph;
    	}
@@ -1077,6 +1089,12 @@ Matrix<T> * link::calc_to_phase( Matrix<T> * _Z )
       	(*Z_ss)[i][j] = (*_Z)[i+num_wire][j+num_wire];
 
    *Zph = (*Z_aa) - (*Z_as) * Z_ss->inverse() * Z_as->transpose();
+
+   if(save_Z_gt){
+      /* Сохраним сопротивления с участием гросотросов, нужно для обратного вычисления Z_aa для определения температуры провода */
+      Z0_as = (Matrix<Complex>)*Z_as;
+      Z0_ss = (Matrix<Complex>)*Z_ss;
+      }
 
    delete Z_aa;	Z_aa = NULL;
    delete Z_as;   Z_as = NULL;
@@ -1343,8 +1361,8 @@ void grid::calc(){
          current_X = (*A)*B;
          delta_X = current_X - previous_X;
          previous_X = current_X;
+         for(int j=0; j<num; j++) (*X)[j][i_freq] = current_X[j][0]; // на основании (*Х) расчитывается update_B()
          } while(  bigger_than_eps(delta_X) );
-      for(int j=0; j<num; j++) (*X)[j][i_freq] = current_X[j][0];
       }
     }
 

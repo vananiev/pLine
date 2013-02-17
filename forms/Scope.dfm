@@ -1,6 +1,6 @@
 object frmScope: TfrmScope
-  Left = 212
-  Top = 191
+  Left = 370
+  Top = 416
   Width = 719
   Height = 406
   Caption = #1054#1089#1094#1080#1083#1086#1075#1088#1072#1092
@@ -211,6 +211,7 @@ object frmScope: TfrmScope
     Top = 8
   end
   object PopupMenu: TPopupMenu
+    AutoHotkeys = maManual
     Left = 648
     Top = 32
     object mnu_Scale: TMenuItem
@@ -232,6 +233,17 @@ object frmScope: TfrmScope
     object mnuFileSaveStep: TMenuItem
       Caption = #1064#1072#1075' '#1079#1072#1087#1080#1089#1080' '#1074' '#1092#1072#1081#1083
       OnClick = mnuFileSaveStepClick
+    end
+    object mnuSaveInstant: TMenuItem
+      Caption = #1047#1072#1087#1080#1089#1100' '#1084#1075#1085#1086#1074#1077#1085#1085#1099#1093' '#1079#1085#1072#1095#1077#1085#1080#1081
+      RadioItem = True
+      OnClick = mnuSaveInstantClick
+    end
+    object mnuSavePhasor: TMenuItem
+      Caption = #1047#1072#1087#1080#1089#1100' '#1074#1077#1082#1090#1086#1088#1085#1099#1081' '#1079#1085#1072#1095#1077#1085#1080#1081
+      Checked = True
+      RadioItem = True
+      OnClick = mnuSavePhasorClick
     end
   end
   object saveDlg: TSaveDialog

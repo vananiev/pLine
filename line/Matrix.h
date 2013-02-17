@@ -10,6 +10,7 @@
 using namespace std;
 extern void err(unsigned, string);
 typedef long double Float;
+typedef complex<Float>  Complex;
 //---------------------------------------------------------------------------
 template<class T> class Matrix;
 //bool Copy_Matrix(Matrix<char> *from, Matrix<Float> *to);
@@ -24,6 +25,7 @@ template<class T> class Matrix{
       unsigned int rows; // число строк
       unsigned int cols; // число столбцов
       void Connected_Nodes(unsigned Node, bool used_node[], Matrix &Tree, unsigned &NumWritedBranch); // поиск соседних узлов для построения дерева
+      void reset_and_resize(unsigned int num_rows, unsigned int num_columns);
    public:
       Matrix(unsigned int num_rows, unsigned int num_columns); 		// нулевая матрица
       Matrix(unsigned int num_rows, unsigned int num_columns, T *B);// инициализируем матрицу
@@ -31,6 +33,7 @@ template<class T> class Matrix{
       Matrix(const Matrix<T> &ob);//конструктор копии
    	~Matrix();
       T *operator[](unsigned int i);
+      operator Matrix<Complex>();
       //Matrix<T> operator=(Matrix<T> op2);
       Matrix<T> &operator=(const Matrix<T> &op2);
       Matrix<T> operator=(T *op2);
@@ -116,6 +119,17 @@ template <class T>  Matrix<T>::~Matrix(){
    	{delete [] A[k];  A[k] = NULL;}
    delete [] A; A = NULL;
 }
+//-------------------------------------------------------------------------
+template < class T > void Matrix<T>::reset_and_resize(unsigned int num_rows, unsigned int num_columns){
+   for(unsigned k=0; k<rows;k++)
+   	{delete [] A[k];  A[k] = NULL;}
+   delete [] A; A = NULL;
+   rows = num_rows;
+   cols = num_columns;
+	A = new T*[rows];
+   for(unsigned k=0; k<rows;k++)
+   	A[k] = new T[cols];
+}
 //---------------------------------------------------------------------------
 template <class T> Matrix<T>  Matrix<T>::operator+(Matrix<T> op2){
 	Matrix<T> temp(rows, cols);
@@ -130,6 +144,14 @@ template <class T> T* Matrix<T>::operator[](unsigned int i){
 	return A[i];
 }
 //---------------------------------------------------------------------------
+template<class T> Matrix<T>::operator Matrix<Complex>(){
+   Matrix<Complex> R(rows,cols);
+   for(unsigned int i=0; i<rows; i++)
+   	for(unsigned int j=0; j<cols; j++)
+      	R[i][j]=(Float)A[i][j];
+   return R;
+}
+//---------------------------------------------------------------------------
 /*template<class T> Matrix<T> Matrix<T>::operator=(Matrix<T> op2){
    if(rows!=op2.rows || cols!=op2.cols) {err( 0, "Присваивание матрицы: матрицы имеют разный размер" ); return *this;}
 	for(unsigned int i=0; i<rows; i++)
@@ -139,7 +161,11 @@ template <class T> T* Matrix<T>::operator[](unsigned int i){
 } */
 //---------------------------------------------------------------------------
 template<class T> Matrix<T> & Matrix<T>::operator=(const Matrix<T> &op2){
-   if(rows!=op2.rows || cols!=op2.cols) {err( 0, "Присваивание матрицы: матрицы имеют разный размер" ); return *this;}
+   if(rows!=op2.rows || cols!=op2.cols) {
+      //err( 0, "Присваивание матрицы: матрицы имеют разный размер. Размер подправлен" );
+      //return *this;
+      reset_and_resize(op2.rows, op2.cols);
+      }
 	for(unsigned int i=0; i<rows; i++)
       for(unsigned int j=0; j<cols; j++)
       	A[i][j] = op2.A[i][j];
@@ -536,7 +562,7 @@ template<class T> void Matrix<T>::Distance_From_Node(unsigned Start_Node, unsign
    for(unsigned j=0; j<cols; j++)
    	if(fabs(A[Start_Node][j])>1e-300) // если есть ветка, найдем до какого она узла
       	for(unsigned i=0; i<rows; i++)
-         	if(fabs(A[i][j])>1e-300 && Find_Dist<Distance[i]){	// если до не узла расттояние меньше
+         	if(fabs(A[i][j])>1e-300 && fabs(Find_Dist-Distance[i])<1e-300){	// если до не узла расттояние меньше
                Distance[i] = Find_Dist;			// помечаем узел
                Cocedi.push_back(i);
             	}
@@ -712,6 +738,33 @@ template<class T> Matrix<T> exp(Matrix<T> X)
 
 //---------------------------------------------------------------------------
 
+template<class T> Matrix<T> log(Matrix<T> X)
+{
+	unsigned n=X.Rows(), m=X.Cols();
+   if(n!=m){err( 0, "Логарифм матрицы: матрица должна быть квадратной"); Matrix<T> N(n,m); return N;}
+   Matrix<T> E(n,n);
+   for(unsigned i=0;i<n;i++) E[i][i] = 1;
+   Matrix<T> Xn = X-E;
+   Matrix<T> mul = Xn;
+   Matrix<T> Addend(n,n);
+   Matrix<T> LOG = Xn;
+   Float eps = 1e-15;		// точность нахождения элемента матрицы
+   int i;
+   for(i=2; i<1000; i++){
+
+      Xn = Xn * mul;
+      if(i%20)	LOG = LOG + 1/i * Xn;	// быстро считаем 10 раз
+      else{ // надо ли остановиться ?
+      	Addend = 1/i * Xn;
+         LOG = LOG + Addend;
+         if( norm(Addend) < eps*norm(LOG))
+         	break;
+         }
+      }
+	return LOG;
+}
+//---------------------------------------------------------------------------
+
 Float norm(Matrix< complex<Float> > X)
 {
    Float N = 0;
@@ -724,14 +777,31 @@ Float norm(Matrix< complex<Float> > X)
 
 //---------------------------------------------------------------------------
 
+bool equal(Matrix< complex<Float> > &X1, Matrix< complex<Float> > &X2){
+   unsigned int n = X1.Rows();
+   unsigned int m = X1.Cols();
+   if(n!=X2.Rows() || m != X2.Cols())
+      {err( 0, "Matrix: equal() число строк и столбцов не совпадает"); return false;}
+   for(unsigned int i=0; i<n; i++)
+      for(unsigned int j=0; j<m; j++){
+         complex<Float> dX = X1[i][j] - X2[i][j];
+         Float X =  abs(X1[i][j] + X2[i][j]);
+         if(fabs(real(dX))>1e-15*X || fabs(imag(dX))>1e-15*X)
+            return false;
+      }
+   return true;
+}
+
+//---------------------------------------------------------------------------
+
 Matrix< complex<Float> > sqrt(Matrix< complex<Float> > X)
 {
 	unsigned n=X.Rows(),  m=X.Cols();
    Matrix< complex<Float> > A = X;
    if(n!=m){err( 0, "Matrix: число строк и столбцов не совпадает"); return A;}
    Matrix< complex<Float> > A_1(n,n);
-   Float eps = 1e-9*norm(X);
-   while( norm(A-A_1) > eps ){
+   //Float eps = 1e-15*norm(X);
+   while( !equal(A,A_1) ){
    	A_1 = A;
    	A = 0.5 * (A+X*A.inverse());
    	}

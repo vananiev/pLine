@@ -30,7 +30,11 @@ __fastcall TfrmMain::TfrmMain(TComponent* Owner)
    ScopeAutoRefreshing = true;
    mnuScopeAutoRefresh->Checked = ScopeAutoRefreshing;
    // если главная форма и если передали параметр - открываем файл
+   FileName = "";
    if(Name == "frmMain") if( ParamCount()>0 )  OpenFile( ParamStr(1) );
+   NeedBuild = true;
+   LineTesting = false;
+   LineTestOutputPath = "D:\\";
 
    mnuObjLibClick(this);
 }
@@ -43,14 +47,14 @@ void err(unsigned Level, std::string Description){
 void __fastcall TfrmMain::LinkDelete(PLinkComponent *Sender){
    // остановим рассчет и запретим продолжение
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
 }
 //---------------------------------------------------------------------------
 void __fastcall TfrmMain::LinkAdd(PLinkComponent *Sender){	// вызывается при изменении связей
    // остановим рассчет и запретим продолжение
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
 }
 //---------------------------------------------------------------------------
@@ -186,7 +190,7 @@ void __fastcall TfrmMain::UnitChange(TObject *Sender){
    // при изменении свойств объекта, чтобы запустить расчет надо пересобрать сеть
    // после пересборки кнопка старта активируется
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
 }
 //---------------------------------------------------------------------------
@@ -194,7 +198,7 @@ void __fastcall TfrmMain::LinkChange(link *Link){
    // при изменении свойств объекта, чтобы запустить расчет надо пересобрать сеть
    // после пересборки кнопка старта активируется
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
 }
 //---------------------------------------------------------------------------
@@ -203,7 +207,7 @@ void __fastcall TfrmMain::UnitDelete(TObject *Sender){
    //CloseScope();
    // остановим рассчет и запретим продолжение
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
    // удаляем компонент из списка
    vector<PBase*>::iterator iter = Objects.begin();
@@ -241,6 +245,27 @@ void __fastcall TfrmMain::FormMouseDown(TObject *Sender,
 //---------------------------------------------------------------------------
 void __fastcall TfrmMain::btnStartClick(TObject *Sender)
 {
+   // при старте собираем сеть если нужно
+   if(!Timer->Enabled && NeedBuild){
+      mnuBuildGridClick(Sender);
+      if(NeedBuild) return;
+      }
+   // в режиме тестирования линии открываем файлы
+   if(LineTesting){
+      for(int phase=0; phase<3; phase++){
+         String ph;
+         switch(phase){
+         case 0: ph="A";break;
+         case 1: ph="B";break;
+         case 2: ph="C";break;
+         }
+         LineTestFile[0+phase*5].open( (LineTestOutputPath+"\\U1_"+ph+".plg").c_str(), ios::out | ios::trunc );
+         LineTestFile[1+phase*5].open( (LineTestOutputPath+"\\I1_"+ph+".plg").c_str(), ios::out | ios::trunc );
+         LineTestFile[2+phase*5].open( (LineTestOutputPath+"\\U2_"+ph+".plg").c_str(), ios::out | ios::trunc );
+         LineTestFile[3+phase*5].open( (LineTestOutputPath+"\\I2_"+ph+".plg").c_str(), ios::out | ios::trunc );
+         LineTestFile[4+phase*5].open( (LineTestOutputPath+"\\T_"+ph+".plg").c_str(), ios::out | ios::trunc );
+         }
+      }
    Timer->Enabled = !Timer->Enabled;
 }
 //---------------------------------------------------------------------------
@@ -256,6 +281,12 @@ void __fastcall TfrmMain::btnStopClick(TObject *Sender)
    Timer->Enabled=false;
    TIME = 0;
    lblTime->Caption=FloatToStr(TIME);
+   // в режиме тестирования линии открываем файлы
+   if(LineTesting){
+      for(int i=0; i<15; i++)
+         if(LineTestFile[i].is_open())
+            LineTestFile[i].close();
+      }
 }
 //---------------------------------------------------------------------------
 void __fastcall TfrmMain::TimerTimer(TObject *Sender)
@@ -269,6 +300,7 @@ void __fastcall TfrmMain::TimerTimer(TObject *Sender)
       if(ScopeAutoRefreshing)
          for(int i=0, n=frmScope.size(); i<n; i++)
             if(frmScope[i]->Timer->Enabled)  frmScope[i]->TimerTimer(this);
+      if(LineTesting) writeToFile();
       }
    lblTime->Caption=FloatToStr(TIME);
    double time_ms = (clock()-t0)/CLOCKS_PER_SEC*1e3;
@@ -277,8 +309,49 @@ void __fastcall TfrmMain::TimerTimer(TObject *Sender)
    if(calc_speed<1)calc_speed=1;
 }
 //---------------------------------------------------------------------------
+void __fastcall TfrmMain::writeToFile(){
+   if(LineTesting){
+         node *nd0 = (node*)Objects[0]->Obj();
+         node *nd1 = (node*)Objects[1]->Obj();
+         link *ln = LinkLines.Links[0];
+         for(int phase=0; phase<3; phase++){
+            LineTestFile[0+phase*5] << TIME << "\t" << get_complex_voltage( nd0, phase ) << endl;
+            LineTestFile[1+phase*5] << TIME << "\t" << get_complex_current( ln,nd0,phase ) << endl;
+            LineTestFile[2+phase*5] << TIME << "\t" << get_complex_voltage( nd1,phase ) << endl;
+            LineTestFile[3+phase*5] << TIME << "\t" << get_complex_current( ln,nd1,phase ) << endl;
+            LineTestFile[4+phase*5] << TIME << "\t" << get_temperature( ln,phase ) << endl;
+            }
+         }
+}
+//---------------------------------------------------------------------------
+Complex TfrmMain::get_complex_current(link* Link, node* Node, int ph){
+      Dynamic_Array< phase<Complex*> > *I;
+      if(Link->From()==Node) I = &Link->I1;
+      else          I = &Link->I2;
+      Complex ret = Complex(0,0);
+      for(int i_freq=0; i_freq < num_f; i_freq++){
+         ret += *(*I)[i_freq][ph];
+         }
+      return ret;
+}
+//---------------------------------------------------------------------------
+Complex TfrmMain::get_complex_voltage(node* Node, int ph){
+      Dynamic_Array< phase<Complex*> > *U = &Node->U;
+      Complex ret = Complex(0,0);
+      for(int i_freq=0; i_freq < num_f; i_freq++){
+         ret += *(*U)[i_freq][ph];
+         }
+      return ret;
+}
+//---------------------------------------------------------------------------
+Float TfrmMain::get_temperature(link* Link, int ph){
+      return Link->T_wire[ph];
+}
+
+//---------------------------------------------------------------------------
 void __fastcall TfrmMain::mnuBuildGridClick(TObject *Sender)
 {
+   if(!NeedBuild) return;
 	Timer->Enabled = false;  // останавливаем рассчет
 	if(Objects.size()==0){
    	err(_NOTICE_,"PowerSystem: в сети нет ни одного объекта для сборки");
@@ -311,16 +384,19 @@ void __fastcall TfrmMain::mnuBuildGridClick(TObject *Sender)
       }
    if(  Grid->Make_Equation() ){
       // уравнения подготовлены без ошибок
-      btnStart->Enabled = true;
+      NeedBuild = false; //btnStart->Enabled = true;
       btnStart->SetFocus();
       mnuScope->Enabled = true;
       // увеличиваем номер сборки сети (просто информация)
       cntBuild++;
+      // схема изменена
+      if(Caption[Caption.Length()] != '*')
+         Caption = Caption + " *";
       }
    else{
       // были ошибки при сборке сети
       delete Grid; Grid = NULL;
-      btnStart->Enabled = false;
+      NeedBuild = true; //btnStart->Enabled = false;
       mnuScope->Enabled = false;
       }
 }
@@ -337,7 +413,7 @@ void TfrmMain::CloseScope(){
 void __fastcall TfrmMain::mnuScopeClick(TObject *Sender)
 {
 	// если рассчет разрешен
-   if(Grid && btnStart->Enabled){
+   if(Grid && !NeedBuild){ //btnStart->Enabled){
       frmScope.push_back(new TfrmScope(this));
       frmScope[frmScope.size()-1]->obj = Grid;
       // метод вызова get_signal() из этой формы или внутри осциллографа по таймеру 
@@ -350,12 +426,13 @@ void __fastcall TfrmMain::mnuScopeClick(TObject *Sender)
 void __fastcall TfrmMain::mnuSaveClick(TObject *Sender)
 {
 	// останавливаем рассчет
-   Timer->Enabled = false;
-   // выводим диалог и сохраняем
-   saveDlg->Filter = "Файл Power Lines|*.plf|любой файл|*.*";
-   if( saveDlg->Execute() ){
-     	AnsiString Name = saveDlg->FileName;
-      ofstream out(Name.c_str());
+   if(FileName == ""){
+      // выводим диалог и сохраняем
+      mnuSaveAsClick(Sender);
+      return;
+      }
+  else{
+      ofstream out(FileName.c_str());
       if(out){
       	// число расчитываемых гармник
          out << num_f << " ";
@@ -369,7 +446,9 @@ void __fastcall TfrmMain::mnuSaveClick(TObject *Sender)
          //  сохраним информацию о связях
          LinkLines.Save( out );
       	}
-    }
+      }
+    // Убираем знак несохраненности
+    Caption = FileName;
 }
 //---------------------------------------------------------------------------
 
@@ -379,8 +458,6 @@ void __fastcall TfrmMain::mnuOpenClick(TObject *Sender)
    CloseScope();
    // останавливаем рассчет
    Timer->Enabled = false;
-   btnStart->Enabled = false;
-   mnuScope->Enabled = false;
    // выводим диалог и открываем
    openDlg->Filter = ".plf|*.plf|любой файл|*.*";
    if( openDlg->Execute() ){
@@ -388,7 +465,7 @@ void __fastcall TfrmMain::mnuOpenClick(TObject *Sender)
     }
 }
 //---------------------------------------------------------------------------
-void TfrmMain::OpenFile(String name){
+bool TfrmMain::OpenFile(String name){
       ifstream in(name.c_str());
       if(in){
          // очищаем существующую сеть
@@ -414,6 +491,14 @@ void TfrmMain::OpenFile(String name){
             Caption = name;
          else
             Caption = name.SubString(Name.Length()-32, 32);
+         FileName = name;
+         NeedBuild = true; //btnStart->Enabled = false;
+         mnuScope->Enabled = false;
+         return true;
+         }
+      else{
+         ShowMessage((String)"Файл " + name + "не найден");
+         return false;
          }
 }
 //---------------------------------------------------------------------------
@@ -422,7 +507,13 @@ void __fastcall TfrmMain::mnuNewClick(TObject *Sender)
    CloseScope();
 	//обнуляем время
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   // в режиме тестирования линии открываем файлы
+   if(LineTesting){
+      for(int i=0; i<15; i++)
+         if(LineTestFile[i].is_open())
+            LineTestFile[i].close();
+      }
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
    TIME = 0;
    lblTime->Caption = 0;
@@ -433,6 +524,9 @@ void __fastcall TfrmMain::mnuNewClick(TObject *Sender)
       delete Objects[i];
    Objects.clear();
    LinkLines.Clear();
+   FileName = "";
+   Caption = "New Model";
+   LineTesting = false; // не в режиме тестирования линии
 }
 //---------------------------------------------------------------------------
 
@@ -444,7 +538,7 @@ void __fastcall TfrmMain::mnuNumFreqClick(TObject *Sender)
    CloseScope();
 	//обнуляем время
    Timer->Enabled = false;
-   btnStart->Enabled = false;
+   NeedBuild = true; //btnStart->Enabled = false;
    mnuScope->Enabled = false;
    // удаляем сеть
    delete Grid; Grid = NULL;
@@ -477,6 +571,63 @@ void __fastcall TfrmMain::mnuStartStopClick(TObject *Sender)
 void __fastcall TfrmMain::mnuClearClick(TObject *Sender)
 {
 	btnStopClick(this);	
+}
+//---------------------------------------------------------------------------
+void __fastcall TfrmMain::mnuSaveAsClick(TObject *Sender)
+{
+	// останавливаем рассчет
+   Timer->Enabled = false;
+   // выводим диалог и сохраняем
+   saveDlg->Filter = "Файл Power Lines|*.plf|любой файл|*.*";
+   if( saveDlg->Execute() ){
+      FileName = saveDlg->FileName;
+      mnuSaveClick(Sender);
+      }
+}
+//---------------------------------------------------------------------------
+// Быстро смоделировать линию
+void __fastcall TfrmMain::mnuLineClick(TObject *Sender)
+{
+   // Открываем модель тестирования линии
+   String d = ParamStr(0);
+   const char *exeName = ParamStr(0).c_str();
+   int e, i;
+   for(e=ParamStr(0).Length(); exeName[e]!='\\' && e>=0; e--);
+   char pathName[1024];
+   for(i=0; i<e; i++) pathName[i] = exeName[i];
+   pathName[i] = 0;
+   if( !OpenFile( (String)pathName + "\\LineTest.plf" ) ) return;
+
+   // Проверяем все ли компоненты на месте
+   if( Objects.size()>2 ) {ShowMessage("Не должно быть более двух объектов"); return;}
+   vector<PBase*>::iterator iter = Objects.begin();
+   bool bSystem = false, bConsumer = false;
+   while(iter != Objects.end()){
+      if( dynamic_cast<big_system*>( (*iter)->Obj() )  )
+         bSystem = true;
+      else if( dynamic_cast<consumer*>( (*iter)->Obj() ) )
+         bConsumer = true;
+      iter++;
+   }
+   if( ! (bSystem && bConsumer) ) {ShowMessage("Не найдена система и потребитель"); return;}
+   if( LinkLines.Links.size()>1 ) {ShowMessage("Не должно быть более одной линии"); return;}
+   
+   LineTestOutputPath = InputBox("Режим тестирования линии", "Папка сохранения результатов", LineTestOutputPath);
+
+   // Мы в режиме тестирования линии
+   LineTesting = true;
+   smp = 1;
+
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TfrmMain::FormResize(TObject *Sender)
+{
+   btnStop->Left = ClientWidth - 25;
+   btnPause->Left = ClientWidth - 49;
+   btnStart->Left = ClientWidth - 73;
+   lblSec->Left = ClientWidth - 97;
+   lblTime->Left = ClientWidth - 137;
 }
 //---------------------------------------------------------------------------
 

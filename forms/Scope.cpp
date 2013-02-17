@@ -231,6 +231,30 @@ Float TfrmScope::get_signal(){
    return 0;
 }
 //---------------------------------------------------------------------------
+Complex TfrmScope::get_complex_signal(){
+   if(rbCurrent->Checked){ // мерием ток
+      Dynamic_Array< phase<Complex*> > *I;
+      if(FromStart) I = &Link->I1;
+      else          I = &Link->I2;
+      Complex ret = Complex(0,0);
+      for(int i_freq=0; i_freq < num_f; i_freq++){
+         ret += *(*I)[i_freq][Phase];
+         }
+      return ret;
+      }
+   else if(rbVoltage->Checked){ // напряжение
+      Dynamic_Array< phase<Complex*> > *U = &Node->U;
+      Complex ret = Complex(0,0);
+      for(int i_freq=0; i_freq < num_f; i_freq++){
+         ret += *(*U)[i_freq][Phase];
+         }
+      return ret;
+      }
+   else if(rbTemperature->Checked) // температура
+      return Complex(Link->T_wire[Phase],0);
+   return 0;
+}
+//---------------------------------------------------------------------------
 void __fastcall TfrmScope::TimerTimer(TObject *Sender)
 {
    if(last_Time == TIME) return;
@@ -240,7 +264,8 @@ void __fastcall TfrmScope::TimerTimer(TObject *Sender)
    Float signal = get_signal();
    Y.push_back(signal);
    if(fout.is_open() && (TIME-LastFileSaveTime-FileSaveStep)>1e-100){
-   	fout << TIME << "\t" << signal << endl;
+      if(mnuSavePhasor->Checked) fout << TIME << "\t" << get_complex_signal() << endl;
+      else fout << TIME << "\t" << signal << endl;
       LastFileSaveTime = TIME;}
    out->Canvas->LineTo(scale_X(this, TIME), scale_Y(this, signal));
    Graph->Canvas -> CopyRect(curve_Rect, out -> Canvas, curve_Rect); // обновляем только область графика (обрезая его)
@@ -706,4 +731,19 @@ void __fastcall TfrmScope::mnuFileSaveStepClick(TObject *Sender)
 	FileSaveStep = fromStr<Float>(InputBox("Шаг записи", "Новое значение, с", toStr<Float>(FileSaveStep).c_str()).c_str());
 }
 //---------------------------------------------------------------------------
+
+void __fastcall TfrmScope::mnuSaveInstantClick(TObject *Sender)
+{
+   mnuSaveInstant->Checked = true;
+   mnuSavePhasor->Checked = false;
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TfrmScope::mnuSavePhasorClick(TObject *Sender)
+{
+   mnuSaveInstant->Checked = false;
+   mnuSavePhasor->Checked = true;
+}
+//---------------------------------------------------------------------------
+
 

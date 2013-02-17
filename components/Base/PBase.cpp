@@ -13,6 +13,7 @@
 #include "line_parameters.h"
 typedef  TfrmProperty  HelpForm;       // класс формы которая будет вызвана в качестве формы свойств
 typedef  TfrmLine_parameters  LineParametersForm;       // класс формы которая будет вызвана в качестве формы параметров линии
+extern vector<LineParametersForm*> LineParametersForms;
 //---------------------------------------------------------------------------
 static inline void ValidCtrCheck(PBase *)
 {
@@ -312,12 +313,14 @@ void PLinkComponent::Delete(PBase* pc){			// удалить связи, где присутствует ука
 }
 //---------------------------------------------------------------------------
 PLinkComponent::~PLinkComponent(){
+   /*
    vector<link*>::iterator iter = Links.begin();
     while( iter != Links.end() )
     {
       delete *iter;
       ++iter;
-    }
+    } */
+   Clear();
 }
 //---------------------------------------------------------------------------
 void __fastcall PLinkComponent::MenuItemClick(TObject *Sender){
@@ -346,6 +349,7 @@ void __fastcall PLinkComponent::MenuItemClick(TObject *Sender){
       LineParametersForm *frmP = new LineParametersForm(NULL);
       frmP->Line = Links[menuFor];
       frmP->Show();
+      LineParametersForms.push_back(frmP);
       }
 }
 //---------------------------------------------------------------------------
@@ -471,6 +475,13 @@ void PLinkComponent::Read(istream &stream){			// загрузить контрол
 }
 //---------------------------------------------------------------------------
 void PLinkComponent::Clear(){
+   // закрываем формы
+   for(int i=0, n=LineParametersForms.size(); i<n; i++){
+      LineParametersForms[i]->Timer->Enabled = false;
+      delete LineParametersForms[i]; 	LineParametersForms[i] = NULL;
+   	}
+   LineParametersForms.clear();
+   // очищаем объекты
    vector<link*>::iterator iter = Links.begin();
     while( iter != Links.end() )
     {
